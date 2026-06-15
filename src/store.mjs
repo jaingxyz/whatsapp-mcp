@@ -97,14 +97,12 @@ export class Store {
         `SELECT from_me, sender, text, ts FROM messages WHERE chat_jid = ? ORDER BY ts DESC LIMIT ?`,
       )
       .all(jid, limit);
-    return rows
-      .reverse()
-      .map((r) => ({
-        from: r.from_me ? "me" : "them",
-        sender: r.sender || "",
-        text: r.text || "",
-        ts: r.ts,
-      }));
+    return rows.reverse().map((r) => ({
+      from: r.from_me ? "me" : "them",
+      sender: r.sender || "",
+      text: r.text || "",
+      ts: r.ts,
+    }));
   }
 
   // Case-insensitive substring search over message text and chat names.

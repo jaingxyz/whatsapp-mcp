@@ -36,12 +36,12 @@ connected, so this runs as a **resident connection + local store**:
 
 ## Tools (planned)
 
-| Tool | What it does |
-|---|---|
+| Tool                 | What it does                                      |
+| -------------------- | ------------------------------------------------- |
 | `list_conversations` | Recent chats (name, last-message snippet, unread) |
-| `read_conversation` | Recent messages in a chat |
-| `send_message` | Send a text to a chat / number |
-| `search_messages` | Search the local store |
+| `read_conversation`  | Recent messages in a chat                         |
+| `send_message`       | Send a text to a chat / number                    |
+| `search_messages`    | Search the local store                            |
 
 ## License
 

@@ -1,0 +1,10 @@
+# Lightweight, offline gate on every commit: syntax check + prettier formatting.
+# The deeper /code-review + security review are run separately (interactive).
+# Bypass with `git commit --no-verify` only if you must.
+echo "pre-commit: lint (syntax) + format check"
+npm run lint || { echo "✗ lint (node --check) failed"; exit 1; }
+npm run format:check || {
+  echo "✗ prettier formatting issues — run 'npm run format' to fix";
+  exit 1;
+}
+echo "✓ pre-commit checks passed"

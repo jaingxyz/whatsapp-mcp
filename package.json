@@ -15,7 +15,8 @@
     "mcp": "node src/server.mjs",
     "lint": "for f in src/*.mjs tools/*.mjs; do [ -e \"$f\" ] && { node --check \"$f\" || exit 1; }; done; true",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "author": "",
   "license": "AGPL-3.0-or-later",
@@ -28,6 +29,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
     "prettier": "^3.4.0"
   }
 }
