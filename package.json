@@ -13,7 +13,7 @@
     "pair": "node src/pair.mjs",
     "daemon": "node src/daemon.mjs",
     "mcp": "node src/server.mjs",
-    "lint": "for f in src/*.mjs tools/*.mjs; do node --check \"$f\" || exit 1; done",
+    "lint": "for f in src/*.mjs tools/*.mjs; do [ -e \"$f\" ] && { node --check \"$f\" || exit 1; }; done; true",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
