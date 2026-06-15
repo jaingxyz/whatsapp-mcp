@@ -1,0 +1,10 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+package-lock.json -diff
+
+LICENSE export-ignore
+.github export-ignore
+tools export-ignore

@@ -1,0 +1,33 @@
+{
+  "name": "whatsapp-mcp",
+  "version": "0.1.0",
+  "description": "A Baileys-based WhatsApp MCP server: a persistent connection + local store exposing read/list/search/send tools. Browser-free alternative to scraping WhatsApp Web.",
+  "type": "module",
+  "bin": {
+    "whatsapp-mcp": "src/server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "pair": "node src/pair.mjs",
+    "daemon": "node src/daemon.mjs",
+    "mcp": "node src/server.mjs",
+    "lint": "for f in src/*.mjs tools/*.mjs; do node --check \"$f\" || exit 1; done",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "author": "",
+  "license": "AGPL-3.0-or-later",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "better-sqlite3": "^11.0.0",
+    "pino": "^9.0.0",
+    "qrcode-terminal": "^0.12.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.0"
+  }
+}

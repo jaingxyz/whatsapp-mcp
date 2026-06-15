@@ -1,0 +1,29 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# Local-only session log — never commit
+*.local.md
+
+# WhatsApp auth credentials (paired session) — NEVER commit
+auth/
+auth_info*/
+creds*/
+
+# Local message store
+*.db
+*.sqlite
+*.sqlite3
+store/
+
+# per-user Claude Code settings
+.claude/settings.local.json
+
+# Personal notes
+NOTES.md
+LEARNINGS.md
