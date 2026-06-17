@@ -42,6 +42,7 @@ export async function connect({
   store = null,
   onUpdate = null,
   phoneNumber = null, // if set, request a pairing code instead of showing a QR
+  showQr = true, // MUST be false for the MCP server — qrcode-terminal writes to stdout
 } = {}) {
   fs.mkdirSync(authDir, { recursive: true });
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -57,7 +58,7 @@ export async function connect({
 
   sock.ev.on("connection.update", (u) => {
     const { connection, lastDisconnect, qr } = u;
-    if (qr && !phoneNumber) {
+    if (qr && !phoneNumber && showQr) {
       console.error("[wa] Scan this QR in WhatsApp → Settings → Linked devices → Link a device:");
       qrcode.generate(qr, { small: true });
     }

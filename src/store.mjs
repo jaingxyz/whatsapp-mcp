@@ -119,6 +119,18 @@ export class Store {
       .map((r) => ({ jid: r.jid, name: r.name || r.jid, text: r.text || "", ts: r.ts }));
   }
 
+  // Resolve an exact (case-insensitive) chat name to its jid. Throws on ambiguity;
+  // returns null if no chat by that name is in the store yet.
+  jidForName(name) {
+    const rows = this.db.prepare(`SELECT jid FROM chats WHERE name = ? COLLATE NOCASE`).all(name);
+    if (rows.length > 1) {
+      throw new Error(
+        `"${name}" matches ${rows.length} chats — use the phone number or jid instead.`,
+      );
+    }
+    return rows.length ? rows[0].jid : null;
+  }
+
   close() {
     this.db.close();
   }
