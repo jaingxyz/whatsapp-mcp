@@ -88,33 +88,62 @@ export async function connect({
   }
 
   if (store) {
+    const saveMessage = (m) => {
+      const jid = m.key?.remoteJid;
+      if (!jid || jid === "status@broadcast") return; // skip status updates
+      const id = m.key?.id ? `${jid}:${m.key.id}` : null;
+      if (!id) return;
+      const text = extractText(m.message);
+      const ts = Number(m.messageTimestamp || 0);
+      const fromMe = !!m.key.fromMe;
+      store.insertMessage({
+        id,
+        chatJid: jid,
+        fromMe,
+        sender: m.pushName || (fromMe ? "me" : jid),
+        text,
+        ts,
+      });
+      store.upsertChat({
+        jid,
+        name: m.pushName || undefined,
+        lastText: text,
+        lastTs: ts,
+        unread: !fromMe,
+      });
+    };
+
+    // Live messages.
     sock.ev.on("messages.upsert", ({ messages }) => {
       for (const m of messages) {
         try {
-          const jid = m.key?.remoteJid;
-          if (!jid || jid === "status@broadcast") continue; // skip status updates
-          const id = m.key?.id ? `${jid}:${m.key.id}` : null;
-          if (!id) continue;
-          const text = extractText(m.message);
-          const ts = Number(m.messageTimestamp || 0);
-          const fromMe = !!m.key.fromMe;
-          store.insertMessage({
-            id,
-            chatJid: jid,
-            fromMe,
-            sender: m.pushName || (fromMe ? "me" : jid),
-            text,
-            ts,
-          });
-          store.upsertChat({
-            jid,
-            name: m.pushName || undefined,
-            lastText: text,
-            lastTs: ts,
-            unread: !fromMe,
-          });
+          saveMessage(m);
         } catch (e) {
           console.error("[wa] store write failed:", e.message);
+        }
+      }
+    });
+
+    // On-connect history sync: existing chats + older messages arrive here, not via upsert.
+    sock.ev.on("messaging-history.set", ({ chats = [], messages = [] }) => {
+      for (const c of chats) {
+        try {
+          if (!c.id || c.id === "status@broadcast") continue;
+          store.upsertChat({
+            jid: c.id,
+            name: c.name || c.subject || undefined,
+            lastTs: c.conversationTimestamp ? Number(c.conversationTimestamp) : 0,
+            unread: (c.unreadCount || 0) > 0,
+          });
+        } catch (e) {
+          console.error("[wa] history chat write failed:", e.message);
+        }
+      }
+      for (const m of messages) {
+        try {
+          saveMessage(m);
+        } catch (e) {
+          console.error("[wa] history message write failed:", e.message);
         }
       }
     });
