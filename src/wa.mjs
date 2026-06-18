@@ -19,6 +19,10 @@ const DEFAULT_AUTH_DIR =
   process.env.WA_AUTH_DIR ||
   path.join(os.homedir(), "Library", "Application Support", "whatsapp-mcp", "auth");
 
+// Guard so a flurry of "close" events can't stack multiple overlapping reconnects
+// (one connection per process).
+let reconnecting = false;
+
 // Pull plain text out of the many WhatsApp message shapes.
 export function extractText(message) {
   if (!message) return "";
@@ -53,6 +57,7 @@ export async function connect({
     auth: state,
     logger: pino({ level: "silent" }),
     browser: ["whatsapp-mcp", "Chrome", "1.0"],
+    syncFullHistory: true, // pull more on-connect history than the default sparse window
   });
   sock.ev.on("creds.update", saveCreds);
 
@@ -65,12 +70,27 @@ export async function connect({
     if (connection === "open") console.error("[wa] connected.");
     if (connection === "close") {
       const code = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = code === DisconnectReason.loggedOut;
+      // Do NOT reconnect on these — reconnecting would fight whatever replaced us and storm:
+      //   loggedOut (401): session ended, must re-pair.
+      //   connectionReplaced (440): another instance/device took over (e.g. a duplicate daemon).
+      //   forbidden (403): account/session blocked.
+      const noReconnect =
+        code === DisconnectReason.loggedOut ||
+        code === DisconnectReason.connectionReplaced ||
+        code === DisconnectReason.forbidden;
       console.error(
-        `[wa] connection closed (code ${code}); ${loggedOut ? "logged out — re-pair required" : "reconnecting in 3s"}`,
+        `[wa] connection closed (code ${code})` +
+          (noReconnect
+            ? " — not reconnecting (re-pair, or only one instance may run)"
+            : "; reconnecting in 3s"),
       );
-      // Reconnect (without re-requesting a pairing code) unless we were logged out.
-      if (!loggedOut) setTimeout(() => connect({ authDir, store, onUpdate }), 3000);
+      if (!noReconnect && !reconnecting) {
+        reconnecting = true;
+        setTimeout(() => {
+          reconnecting = false;
+          connect({ authDir, store, onUpdate });
+        }, 3000);
+      }
     }
     onUpdate?.(u);
   });
