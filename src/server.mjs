@@ -60,7 +60,7 @@ const fail = (e) => ({
 });
 
 server.tool(
-  "pairing_status",
+  "whatsapp_pairing_status",
   "Check whether the WhatsApp session is paired and connected. If not paired, pair separately with `npm run pair`.",
   {},
   async () => {
@@ -79,7 +79,7 @@ server.tool(
 );
 
 server.tool(
-  "list_conversations",
+  "whatsapp_list_conversations",
   "List recent WhatsApp chats from the local store (name, last-message snippet, unread). The store is filled by the live connection; very recent history may take a moment to sync.",
   { limit: z.number().int().min(1).max(50).default(20).describe("Max chats to return") },
   async ({ limit }) => {
@@ -92,7 +92,7 @@ server.tool(
 );
 
 server.tool(
-  "read_conversation",
+  "whatsapp_read_conversation",
   "Read recent messages in a chat — by exact chat name, phone number (with country code), or jid.",
   {
     chat: z.string().describe("Exact chat name, phone number, or jid"),
@@ -108,7 +108,7 @@ server.tool(
 );
 
 server.tool(
-  "search_messages",
+  "whatsapp_search_messages",
   "Search the local WhatsApp store by message text or chat name (case-insensitive). Covers what has synced to the store, not your entire WhatsApp history.",
   { query: z.string(), limit: z.number().int().min(1).max(50).default(20) },
   async ({ query, limit }) => {
@@ -123,7 +123,7 @@ server.tool(
 );
 
 server.tool(
-  "send_message",
+  "whatsapp_send_message",
   "Send a WhatsApp text. `to` is a phone number (with country code), an exact chat name, or a jid. Requires a paired session.",
   { to: z.string().describe("Phone number, exact chat name, or jid"), text: z.string() },
   async ({ to, text: body }) => {
