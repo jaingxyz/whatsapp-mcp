@@ -133,6 +133,31 @@ export async function connect({
       });
     };
 
+    // Contact + group display names → name registry.
+    const saveNames = (contacts = []) => {
+      for (const c of contacts) {
+        try {
+          store.upsertContact(c.id, c.name || c.notify || c.verifiedName);
+        } catch (e) {
+          console.error("[wa] contact write failed:", e.message);
+        }
+      }
+    };
+    sock.ev.on("contacts.set", ({ contacts = [] }) => saveNames(contacts));
+    sock.ev.on("contacts.upsert", (contacts) => saveNames(contacts));
+    sock.ev.on("contacts.update", (contacts) => saveNames(contacts));
+    const saveGroups = (groups = []) => {
+      for (const g of groups) {
+        try {
+          store.upsertContact(g.id, g.subject);
+        } catch (e) {
+          console.error("[wa] group write failed:", e.message);
+        }
+      }
+    };
+    sock.ev.on("groups.upsert", (groups) => saveGroups(groups));
+    sock.ev.on("groups.update", (groups) => saveGroups(groups));
+
     // Live messages.
     sock.ev.on("messages.upsert", ({ messages }) => {
       for (const m of messages) {

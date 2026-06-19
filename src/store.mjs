@@ -40,6 +40,11 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS idx_messages_chat_ts ON messages(chat_jid, ts);
       CREATE INDEX IF NOT EXISTS idx_chats_last_ts ON chats(last_ts DESC);
+      -- jid -> display name registry, fed by contacts.* and groups.* events.
+      CREATE TABLE IF NOT EXISTS contacts (
+        jid   TEXT PRIMARY KEY,
+        name  TEXT
+      );
     `);
   }
 
@@ -66,6 +71,17 @@ export class Store {
       });
   }
 
+  // Register/refresh a jid's display name (contact or group). Ignores empties.
+  upsertContact(jid, name) {
+    if (!jid || !name) return;
+    this.db
+      .prepare(
+        `INSERT INTO contacts (jid, name) VALUES (?, ?)
+         ON CONFLICT(jid) DO UPDATE SET name = excluded.name`,
+      )
+      .run(jid, name);
+  }
+
   // Insert a message; ignore if we've already stored this id (events can repeat).
   insertMessage({ id, chatJid, fromMe = false, sender, text, ts = 0 }) {
     this.db
@@ -79,7 +95,11 @@ export class Store {
   listChats(limit = 20) {
     return this.db
       .prepare(
-        `SELECT jid, name, last_text, last_ts, unread FROM chats ORDER BY last_ts DESC LIMIT ?`,
+        `SELECT c.jid AS jid,
+                COALESCE(NULLIF(c.name, ''), n.name) AS name,
+                c.last_text AS last_text, c.last_ts AS last_ts, c.unread AS unread
+         FROM chats c LEFT JOIN contacts n ON n.jid = c.jid
+         ORDER BY c.last_ts DESC LIMIT ?`,
       )
       .all(limit)
       .map((r) => ({
@@ -110,22 +130,36 @@ export class Store {
     const like = `%${query.replace(/[%_]/g, "")}%`;
     return this.db
       .prepare(
-        `SELECT m.chat_jid AS jid, c.name AS name, m.text AS text, m.ts AS ts
-         FROM messages m LEFT JOIN chats c ON c.jid = m.chat_jid
-         WHERE m.text LIKE ? COLLATE NOCASE OR c.name LIKE ? COLLATE NOCASE
+        `SELECT m.chat_jid AS jid,
+                COALESCE(NULLIF(c.name, ''), n.name) AS name,
+                m.text AS text, m.ts AS ts
+         FROM messages m
+         LEFT JOIN chats c ON c.jid = m.chat_jid
+         LEFT JOIN contacts n ON n.jid = m.chat_jid
+         WHERE m.text LIKE ? COLLATE NOCASE
+            OR c.name LIKE ? COLLATE NOCASE
+            OR n.name LIKE ? COLLATE NOCASE
          ORDER BY m.ts DESC LIMIT ?`,
       )
-      .all(like, like, limit)
+      .all(like, like, like, limit)
       .map((r) => ({ jid: r.jid, name: r.name || r.jid, text: r.text || "", ts: r.ts }));
   }
 
-  // Resolve an exact (case-insensitive) chat name to its jid. Throws on ambiguity;
-  // returns null if no chat by that name is in the store yet.
+  // Resolve an exact (case-insensitive) name to its jid, across chat names AND the
+  // contact/group name registry. Throws on ambiguity; null if unknown.
   jidForName(name) {
-    const rows = this.db.prepare(`SELECT jid FROM chats WHERE name = ? COLLATE NOCASE`).all(name);
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT jid FROM (
+           SELECT jid FROM chats    WHERE name = ? COLLATE NOCASE
+           UNION
+           SELECT jid FROM contacts WHERE name = ? COLLATE NOCASE
+         )`,
+      )
+      .all(name, name);
     if (rows.length > 1) {
       throw new Error(
-        `"${name}" matches ${rows.length} chats — use the phone number or jid instead.`,
+        `"${name}" matches ${rows.length} chats/contacts — use the phone number or jid instead.`,
       );
     }
     return rows.length ? rows[0].jid : null;
