@@ -32,16 +32,29 @@ connected, so this runs as a **resident connection + local store**:
   spammy automation. Use a number you can afford to lose; for sanctioned automation use
   the WhatsApp Business Cloud API instead.
 - **Personal use only**, low volume, people you know.
-- **No auto-deletion** of chats in this version (read/list/search/send only).
+- **Deletion is guarded**, never automatic: it requires an explicit `confirm: true`
+  (otherwise the tool only previews), defaults to delete-_for-me_, and only allows
+  delete-_for-everyone_ on your own messages. See the [security model](SECURITY.md).
 
-## Tools (planned)
+## Tools
 
-| Tool                 | What it does                                      |
-| -------------------- | ------------------------------------------------- |
-| `list_conversations` | Recent chats (name, last-message snippet, unread) |
-| `read_conversation`  | Recent messages in a chat                         |
-| `send_message`       | Send a text to a chat / number                    |
-| `search_messages`    | Search the local store                            |
+All tools are prefixed `whatsapp_` to avoid name collisions with other MCP servers.
+
+| Tool                  | What it does                                                           |
+| --------------------- | ---------------------------------------------------------------------- |
+| `pairing_status`      | Whether the session is paired and connected                            |
+| `list_conversations`  | Recent chats (name, last-message snippet, unread)                      |
+| `read_conversation`   | Recent messages in a chat (each with an `id` for deletion)             |
+| `send_message`        | Send a text to a chat / number                                         |
+| `search_messages`     | Search the local store                                                 |
+| `delete_message`      | Delete one message — for-me by default; for-everyone (own msgs) opt-in |
+| `delete_conversation` | Delete a whole conversation for-me (never affects the other person)    |
+
+> **Delete semantics.** "For me" clears the message/chat from _your_ devices only.
+> "For everyone" (messages only, your own only) revokes it for the recipient and leaves a
+> visible "this message was deleted" marker. Both require `confirm: true`; without it the
+> tool returns a preview and does nothing. Deletes are applied to the local store optimistically;
+> a long-running daemon may re-sync a deleted-for-me item if WhatsApp re-delivers it.
 
 ## License
 
