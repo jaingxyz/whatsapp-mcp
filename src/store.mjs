@@ -46,6 +46,15 @@ export class Store {
         name  TEXT
       );
     `);
+    // The author jid of a group message — required to build a valid delete key for
+    // incoming group messages (Baileys rejects a non-fromMe group key without it).
+    // Added after the initial schema, so migrate existing DBs in place.
+    const hasParticipant = this.db
+      .prepare(`SELECT 1 FROM pragma_table_info('messages') WHERE name = 'participant'`)
+      .get();
+    if (!hasParticipant) {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN participant TEXT`);
+    }
   }
 
   // Upsert a chat's summary row. Only advances last_text/last_ts when the incoming
@@ -83,13 +92,21 @@ export class Store {
   }
 
   // Insert a message; ignore if we've already stored this id (events can repeat).
-  insertMessage({ id, chatJid, fromMe = false, sender, text, ts = 0 }) {
+  insertMessage({ id, chatJid, fromMe = false, sender, text, ts = 0, participant = null }) {
     this.db
       .prepare(
-        `INSERT OR IGNORE INTO messages (id, chat_jid, from_me, sender, text, ts)
-         VALUES (@id, @chatJid, @fromMe, @sender, @text, @ts)`,
+        `INSERT OR IGNORE INTO messages (id, chat_jid, from_me, sender, text, ts, participant)
+         VALUES (@id, @chatJid, @fromMe, @sender, @text, @ts, @participant)`,
       )
-      .run({ id, chatJid, fromMe: fromMe ? 1 : 0, sender: sender ?? null, text: text ?? null, ts });
+      .run({
+        id,
+        chatJid,
+        fromMe: fromMe ? 1 : 0,
+        sender: sender ?? null,
+        text: text ?? null,
+        ts,
+        participant: participant ?? null,
+      });
   }
 
   listChats(limit = 20) {
@@ -112,17 +129,103 @@ export class Store {
 
   readChat(jid, limit = 30) {
     // Most recent `limit`, returned oldest-first for natural reading order.
+    // `id` is included so callers can reference a specific message for deletion.
     const rows = this.db
       .prepare(
-        `SELECT from_me, sender, text, ts FROM messages WHERE chat_jid = ? ORDER BY ts DESC LIMIT ?`,
+        `SELECT id, from_me, sender, text, ts FROM messages WHERE chat_jid = ? ORDER BY ts DESC LIMIT ?`,
       )
       .all(jid, limit);
     return rows.reverse().map((r) => ({
+      id: r.id,
       from: r.from_me ? "me" : "them",
       sender: r.sender || "",
       text: r.text || "",
       ts: r.ts,
     }));
+  }
+
+  // Fetch one stored message by its store id (`<jid>:<waMessageId>`), or null.
+  getMessage(id) {
+    const r = this.db
+      .prepare(
+        `SELECT id, chat_jid, from_me, sender, text, ts, participant FROM messages WHERE id = ?`,
+      )
+      .get(id);
+    if (!r) return null;
+    return {
+      id: r.id,
+      chatJid: r.chat_jid,
+      fromMe: !!r.from_me,
+      sender: r.sender || "",
+      text: r.text || "",
+      ts: r.ts,
+      participant: r.participant || null,
+    };
+  }
+
+  // Latest stored message in a chat (for building the delete "last messages" anchor), or null.
+  lastMessage(jid) {
+    const r = this.db
+      .prepare(
+        `SELECT id, chat_jid, from_me, ts, participant FROM messages WHERE chat_jid = ? ORDER BY ts DESC LIMIT 1`,
+      )
+      .get(jid);
+    if (!r) return null;
+    return {
+      id: r.id,
+      chatJid: r.chat_jid,
+      fromMe: !!r.from_me,
+      ts: r.ts,
+      participant: r.participant || null,
+    };
+  }
+
+  // Summary of a chat for delete previews: resolved name + stored-message count. null if unknown.
+  chatInfo(jid) {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(NULLIF(c.name, ''), n.name) AS name
+         FROM chats c LEFT JOIN contacts n ON n.jid = c.jid WHERE c.jid = ?`,
+      )
+      .get(jid);
+    const count = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM messages WHERE chat_jid = ?`)
+      .get(jid).n;
+    if (!row && count === 0) return null;
+    return { jid, name: row?.name || jid, messageCount: count };
+  }
+
+  // Remove one stored message and refresh its chat's denormalized last-message fields.
+  // Atomic so a crash can't leave the chat snippet pointing at a deleted message.
+  // Returns the number of message rows deleted (0 or 1).
+  deleteMessage(id) {
+    const msg = this.getMessage(id);
+    if (!msg) return 0;
+    return this.db.transaction(() => {
+      const changes = this.db.prepare(`DELETE FROM messages WHERE id = ?`).run(id).changes;
+      this._refreshChatLast(msg.chatJid);
+      return changes;
+    })();
+  }
+
+  // Remove a whole conversation from the local store (its messages + summary row), atomically.
+  // Leaves the contact/group name registry intact. Returns counts.
+  deleteChat(jid) {
+    return this.db.transaction(() => {
+      const messages = this.db.prepare(`DELETE FROM messages WHERE chat_jid = ?`).run(jid).changes;
+      const chats = this.db.prepare(`DELETE FROM chats WHERE jid = ?`).run(jid).changes;
+      return { messages, chats };
+    })();
+  }
+
+  // Recompute a chat's denormalized last_text/last_ts from its remaining messages.
+  _refreshChatLast(jid) {
+    const last = this.db
+      .prepare(`SELECT text, ts FROM messages WHERE chat_jid = ? ORDER BY ts DESC LIMIT 1`)
+      .get(jid);
+    this.db
+      .prepare(`UPDATE chats SET last_text = ?, last_ts = ? WHERE jid = ?`)
+      .run(last?.text ?? null, last?.ts ?? 0, jid);
   }
 
   // Case-insensitive substring search over message text and chat names.

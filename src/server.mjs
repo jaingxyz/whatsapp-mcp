@@ -50,6 +50,17 @@ function resolveJid(to) {
   return jid;
 }
 
+// Rebuild a Baileys message key from a stored message. The store id is `<jid>:<waId>`;
+// strip the chat-jid prefix to recover the raw WhatsApp message id. For incoming group
+// messages WhatsApp requires the author jid (participant) or it rejects the delete key.
+function keyFromMessage(msg) {
+  const prefix = `${msg.chatJid}:`;
+  const waId = msg.id.startsWith(prefix) ? msg.id.slice(prefix.length) : msg.id;
+  const key = { remoteJid: msg.chatJid, fromMe: msg.fromMe, id: waId };
+  if (msg.participant) key.participant = msg.participant;
+  return key;
+}
+
 const server = new McpServer({ name: "whatsapp", version: "0.1.0" });
 const text = (o) => ({
   content: [{ type: "text", text: typeof o === "string" ? o : JSON.stringify(o, null, 2) }],
@@ -135,6 +146,148 @@ server.tool(
       const jid = resolveJid(to);
       const res = await sock.sendMessage(jid, { text: body });
       return text({ ok: true, to: jid, id: res?.key?.id || null });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.tool(
+  "whatsapp_delete_message",
+  "Delete a single WhatsApp message. Defaults to delete-for-me (removes it from YOUR view only). " +
+    "Set for_everyone:true to revoke it for the recipient too — only allowed on your OWN messages, and it " +
+    "leaves a visible 'message was deleted' marker. Get a message's id from whatsapp_read_conversation. " +
+    "Without confirm:true this only PREVIEWS what would be deleted and does nothing.",
+  {
+    message_id: z
+      .string()
+      .describe("The `id` of a message, as returned by whatsapp_read_conversation"),
+    for_everyone: z
+      .boolean()
+      .default(false)
+      .describe("Revoke for the recipient too (own messages only). Default: delete for me only."),
+    confirm: z
+      .boolean()
+      .default(false)
+      .describe("Must be true to actually delete; otherwise previews."),
+  },
+  async ({ message_id, for_everyone, confirm }) => {
+    try {
+      const msg = store.getMessage(message_id);
+      if (!msg) {
+        throw new Error(
+          `No stored message with id "${message_id}". Get a current id from whatsapp_read_conversation.`,
+        );
+      }
+      if (for_everyone && !msg.fromMe) {
+        throw new Error(
+          "WhatsApp only lets you delete your OWN messages for everyone. Omit for_everyone to delete it just for yourself.",
+        );
+      }
+      const scope = for_everyone ? "for-everyone (revoke)" : "for-me";
+      if (!confirm) {
+        return text({
+          preview: true,
+          would_delete: {
+            id: msg.id,
+            from: msg.fromMe ? "me" : "them",
+            text: msg.text,
+            ts: msg.ts,
+          },
+          scope,
+          hint: "Call again with confirm:true to actually delete.",
+        });
+      }
+      await ensureSock();
+      if (!sock?.authState?.creds?.registered) {
+        throw new Error("Not paired — run `npm run pair` and scan the QR first.");
+      }
+      const key = keyFromMessage(msg);
+      // WhatsApp rejects a delete key for an incoming group message that lacks the author
+      // jid. Older messages synced before participant capture won't have it — fail clearly
+      // instead of letting Baileys throw a cryptic error (and never touch the local store).
+      if (key.remoteJid.endsWith("@g.us") && !key.fromMe && !key.participant) {
+        throw new Error(
+          "Can't delete this incoming group message — its author isn't recorded locally " +
+            "(it predates participant tracking). Newly received group messages can be deleted.",
+        );
+      }
+      if (for_everyone) {
+        await sock.sendMessage(msg.chatJid, { delete: key });
+      } else {
+        await sock.chatModify(
+          { deleteForMe: { deleteMedia: false, key, timestamp: msg.ts } },
+          msg.chatJid,
+        );
+      }
+      // Only reached if the WhatsApp-side delete didn't throw.
+      store.deleteMessage(message_id);
+      return text({ ok: true, deleted: message_id, scope });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+server.tool(
+  "whatsapp_delete_conversation",
+  "Delete an entire WhatsApp conversation FOR YOU (delete-for-me) — clears it from your devices only and does " +
+    "NOT affect the other person. WhatsApp has no delete-conversation-for-everyone, so this never touches their copy. " +
+    "Identify the chat by exact name, phone number (with country code), or jid. Without confirm:true this only " +
+    "PREVIEWS what would be deleted and does nothing.",
+  {
+    chat: z.string().describe("Exact chat name, phone number, or jid"),
+    confirm: z
+      .boolean()
+      .default(false)
+      .describe("Must be true to actually delete; otherwise previews."),
+  },
+  async ({ chat, confirm }) => {
+    try {
+      const jid = resolveJid(chat);
+      const info = store.chatInfo(jid);
+      if (!confirm) {
+        return text({
+          preview: true,
+          would_delete: {
+            jid,
+            name: info?.name || jid,
+            stored_messages: info?.messageCount ?? 0,
+          },
+          scope: "for-me (your devices only; the other person is unaffected)",
+          hint: "Call again with confirm:true to actually delete.",
+        });
+      }
+      await ensureSock();
+      if (!sock?.authState?.creds?.registered) {
+        throw new Error("Not paired — run `npm run pair` and scan the QR first.");
+      }
+      // The WhatsApp-side delete needs an anchor message with a valid (non-zero) timestamp
+      // and — for an incoming group chat — the author jid. If we can't build a valid anchor,
+      // we still clear the local copy but must NOT claim WhatsApp was touched.
+      const last = store.lastMessage(jid);
+      const key = last ? keyFromMessage(last) : null;
+      const anchorOk =
+        !!last &&
+        last.ts > 0 &&
+        !(key.remoteJid.endsWith("@g.us") && !key.fromMe && !key.participant);
+      let whatsappSide = "skipped (no valid anchor message; cleared from local store only)";
+      if (anchorOk) {
+        await sock.chatModify(
+          { delete: true, lastMessages: [{ key, messageTimestamp: last.ts }] },
+          jid,
+        );
+        whatsappSide = "deleted";
+      }
+      // Only reached if any WhatsApp-side call above didn't throw.
+      const counts = store.deleteChat(jid);
+      return text({
+        ok: true,
+        chat: jid,
+        scope: "for-me",
+        whatsapp_side: whatsappSide,
+        removed_from_store: counts,
+      });
     } catch (e) {
       return fail(e);
     }

@@ -123,6 +123,8 @@ export async function connect({
         sender: m.pushName || (fromMe ? "me" : jid),
         text,
         ts,
+        // Author jid within a group — needed to build a valid delete key later.
+        participant: m.key?.participant || null,
       });
       store.upsertChat({
         jid,

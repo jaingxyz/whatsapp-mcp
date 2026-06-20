@@ -33,6 +33,11 @@ Out of scope:
 - Only **one process** may hold the WhatsApp session at a time.
 - This tool is for **personal use of your own account**. Do not use it for bulk or
   unauthorized messaging — that risks an account ban and may be unlawful.
+- **Destructive tools (`delete_message`, `delete_conversation`)** are gated: they require an
+  explicit `confirm: true` (otherwise they only preview), default to delete-for-me, and only
+  permit delete-for-everyone on your own messages. An MCP client driven by an LLM therefore
+  cannot delete content in a single careless call. Delete-for-everyone is irreversible and
+  visible to the recipient — treat the `confirm` step as the real safety boundary.
 
 ## Supported versions
 
