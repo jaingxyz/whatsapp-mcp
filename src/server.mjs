@@ -1,28 +1,40 @@
 #!/usr/bin/env node
 // WhatsApp MCP server. Exposes list/read/search/send over stdio.
 //
-// The server owns the WhatsApp connection (lazily, on first tool call) AND reads the local
-// store the connection fills. NOTHING may be written to stdout except the MCP protocol — so
-// the connection is opened with showQr:false (qrcode-terminal prints to stdout). Pair
-// separately with `npm run pair`.
-//
-// One paired session = one socket: don't run the MCP server and the standalone daemon at the
-// same time (they'd fight over the same credentials).
+// Reads always come from the local store. For socket operations (send/delete/status):
+// if the resident daemon is running, its loopback IPC is used (see ipc.mjs) — one paired
+// session = one socket, and the daemon owns it. Only when no daemon is detected does this
+// server open the connection itself (lazily, on first tool call). NOTHING may be written
+// to stdout except the MCP protocol — so a self-owned connection uses showQr:false
+// (qrcode-terminal prints to stdout). Pair separately with `npm run pair`.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { connect } from "./wa.mjs";
 import { Store } from "./store.mjs";
+import { daemonProxy } from "./ipc.mjs";
 
 const store = new Store();
-let sock = null;
+let sock = null; // either a daemon proxy or a self-owned Baileys socket
 let connState = "init";
 
 async function ensureSock() {
+  if (sock?.isDaemonProxy && sock.dead) sock = null; // daemon died — re-detect
+  // A self-owned socket that closed and won't reconnect (e.g. the daemon started later
+  // and replaced this session — 440) must not stay cached, or every send fails until
+  // the MCP server restarts. Drop it and re-detect: the daemon proxy will pick it up.
+  if (sock && !sock.isDaemonProxy && connState === "close") sock = null;
   if (sock) return sock;
+  const proxy = await daemonProxy();
+  if (proxy) {
+    sock = proxy;
+    connState = "daemon";
+    return sock;
+  }
   sock = await connect({
     store,
+    onSock: (s) => (sock = s), // stay on the LIVE socket across auto-reconnects
     showQr: false, // never print a QR to stdout — it would corrupt the MCP stream
     onUpdate: (u) => {
       if (u.connection) connState = u.connection;
@@ -77,10 +89,18 @@ server.tool(
   async () => {
     try {
       await ensureSock();
-      const registered = !!sock?.authState?.creds?.registered;
+      let registered, connection;
+      if (sock.isDaemonProxy) {
+        ({ registered, connection } = await sock.status()); // live, from the daemon
+      } else {
+        // creds.registered is only set for pairing-code sessions; sock.user covers QR.
+        registered = !!(sock?.authState?.creds?.registered || sock?.user);
+        connection = connState;
+      }
       return text({
         registered,
-        connection: connState,
+        connection,
+        via: sock.isDaemonProxy ? "daemon" : "own socket",
         hint: registered ? undefined : "Not paired — run `npm run pair` and scan the QR.",
       });
     } catch (e) {

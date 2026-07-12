@@ -22,6 +22,26 @@ connected, so this runs as a **resident connection + local store**:
   created once via QR / pairing code.
 - **MCP server** — reads the store and sends via the socket, exposing the tools.
 
+One paired session = one socket, so the two coordinate instead of fighting over it:
+while the daemon runs, it is the sole socket owner and serves a **loopback IPC**
+(`daemon.json` next to the store: pid + random port + per-run token, 127.0.0.1 only).
+The MCP server auto-detects it and proxies socket ops (send/delete/status) through it;
+reads always hit the shared WAL-mode SQLite store directly. With no daemon running, the
+MCP server opens the socket itself, as before. If the daemon dies mid-session the proxy
+flags itself dead and the next tool call falls back to a self-owned socket.
+
+### Run the daemon persistently (macOS)
+
+```bash
+cp com.whatsapp-mcp.daemon.plist ~/Library/LaunchAgents/
+launchctl load -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist   # start + at login
+tail -f ~/Library/Logs/whatsapp-mcp-daemon.log                           # watch it
+launchctl unload -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist # stop
+```
+
+A resident daemon means the store keeps filling 24/7 (better history than the MCP
+server's lazy on-demand connection) and MCP clients get instant reads.
+
 > History reflects what has been synced since you connected (on-connect sync + live
 > events), not your entire WhatsApp past.
 
