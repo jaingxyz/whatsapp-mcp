@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  LaunchAgent for the resident WhatsApp daemon: keeps the connection open so the local
+  store stays fresh, and serves the loopback IPC that the MCP server proxies through.
+
+  Install:
+    cp com.whatsapp-mcp.daemon.plist ~/Library/LaunchAgents/
+    launchctl load -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist
+  Stop (persists across reboots):
+    launchctl unload -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist
+  Logs:
+    tail -f ~/Library/Logs/whatsapp-mcp-daemon.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.whatsapp-mcp.daemon</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/gauravjx/.nvm/versions/node/v24.16.0/bin/node</string>
+    <string>/Users/gauravjx/code/whatsapp-mcp/src/daemon.mjs</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/gauravjx/code/whatsapp-mcp</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart if it exits for any reason (crash, network flap, etc.) -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Don't restart-storm: wait 10s between respawns -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/gauravjx/Library/Logs/whatsapp-mcp-daemon.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/gauravjx/Library/Logs/whatsapp-mcp-daemon.log</string>
+</dict>
+</plist>
