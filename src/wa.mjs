@@ -45,6 +45,7 @@ export async function connect({
   authDir = DEFAULT_AUTH_DIR,
   store = null,
   onUpdate = null,
+  onSock = null, // called with each live socket, including the new one after a reconnect
   phoneNumber = null, // if set, request a pairing code instead of showing a QR
   showQr = true, // MUST be false for the MCP server — qrcode-terminal writes to stdout
 } = {}) {
@@ -88,7 +89,7 @@ export async function connect({
         reconnecting = true;
         setTimeout(() => {
           reconnecting = false;
-          connect({ authDir, store, onUpdate });
+          connect({ authDir, store, onUpdate, onSock, showQr });
         }, 3000);
       }
     }
@@ -196,5 +197,6 @@ export async function connect({
     });
   }
 
+  onSock?.(sock);
   return sock;
 }
