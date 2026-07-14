@@ -68,7 +68,10 @@ export function startIpc({ getSock, getStatus }) {
         }
         return reply(400, { ok: false, error: `unknown op ${op}` });
       } catch (e) {
-        return reply(500, { ok: false, error: e?.message || String(e) });
+        // Log the detail server-side (loopback daemon stderr), but never return the
+        // exception text — which can carry a stack trace — over the wire.
+        console.error("[ipc] op failed:", e?.stack || e?.message || String(e));
+        return reply(500, { ok: false, error: "internal error" });
       }
     });
   });
