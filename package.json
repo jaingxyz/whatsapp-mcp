@@ -9,6 +9,9 @@
   "engines": {
     "node": ">=20"
   },
+  "overrides": {
+    "@hono/node-server": "^2.0.5"
+  },
   "scripts": {
     "pair": "node src/pair.mjs",
     "daemon": "node src/daemon.mjs",
