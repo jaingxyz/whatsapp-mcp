@@ -73,6 +73,38 @@ function keyFromMessage(msg) {
   return key;
 }
 
+// Resolve a socket that is paired AND connected, or throw a clear error. Used by every
+// tool that talks to WhatsApp (send / delete).
+//
+// Paired: creds.registered is only set for pairing-code sessions; QR-linked sessions
+// leave it false and are identified by creds.me (saved at link time) — the same rule
+// whatsapp_pairing_status and the daemon use. Connected: a self-owned socket is opened
+// lazily on the first call, so give it a moment to reach "open" before using it.
+const OPEN_TIMEOUT_MS = 20000;
+async function requireConnected() {
+  await ensureSock();
+  if (sock.isDaemonProxy) {
+    const { registered } = await sock.status();
+    if (!registered) throw new Error("Not paired — run `npm run pair` and scan the QR first.");
+    return sock;
+  }
+  const creds = sock?.authState?.creds;
+  if (!(creds?.registered || creds?.me || sock?.user)) {
+    throw new Error("Not paired — run `npm run pair` and scan the QR first.");
+  }
+  const deadline = Date.now() + OPEN_TIMEOUT_MS;
+  while (connState !== "open" && connState !== "close" && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  if (connState !== "open") {
+    throw new Error(
+      `WhatsApp connection is "${connState}", not open. If this persists, the session may have ` +
+        "been logged out (re-pair with `npm run pair`) or another client holds it (only one may run).",
+    );
+  }
+  return sock;
+}
+
 const server = new McpServer({ name: "whatsapp", version: "0.1.0" });
 const text = (o) => ({
   content: [{ type: "text", text: typeof o === "string" ? o : JSON.stringify(o, null, 2) }],
@@ -159,10 +191,7 @@ server.tool(
   { to: z.string().describe("Phone number, exact chat name, or jid"), text: z.string() },
   async ({ to, text: body }) => {
     try {
-      await ensureSock();
-      if (!sock?.authState?.creds?.registered) {
-        throw new Error("Not paired — run `npm run pair` and scan the QR first.");
-      }
+      await requireConnected();
       const jid = resolveJid(to);
       const res = await sock.sendMessage(jid, { text: body });
       return text({ ok: true, to: jid, id: res?.key?.id || null });
@@ -218,10 +247,7 @@ server.tool(
           hint: "Call again with confirm:true to actually delete.",
         });
       }
-      await ensureSock();
-      if (!sock?.authState?.creds?.registered) {
-        throw new Error("Not paired — run `npm run pair` and scan the QR first.");
-      }
+      await requireConnected();
       const key = keyFromMessage(msg);
       // WhatsApp rejects a delete key for an incoming group message that lacks the author
       // jid. Older messages synced before participant capture won't have it — fail clearly
@@ -278,10 +304,7 @@ server.tool(
           hint: "Call again with confirm:true to actually delete.",
         });
       }
-      await ensureSock();
-      if (!sock?.authState?.creds?.registered) {
-        throw new Error("Not paired — run `npm run pair` and scan the QR first.");
-      }
+      await requireConnected();
       // The WhatsApp-side delete needs an anchor message with a valid (non-zero) timestamp
       // and — for an incoming group chat — the author jid. If we can't build a valid anchor,
       // we still clear the local copy but must NOT claim WhatsApp was touched.
