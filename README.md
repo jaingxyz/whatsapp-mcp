@@ -32,8 +32,15 @@ flags itself dead and the next tool call falls back to a self-owned socket.
 
 ### Run the daemon persistently (macOS)
 
+launchd does not expand `~` or `$HOME`, so build the LaunchAgent from the template —
+it needs absolute paths for your machine:
+
 ```bash
-cp com.whatsapp-mcp.daemon.plist ~/Library/LaunchAgents/
+sed -e "s#__NODE__#$(command -v node)#" \
+    -e "s#__REPO__#$PWD#" \
+    -e "s#__HOME__#$HOME#" \
+    com.whatsapp-mcp.daemon.plist.example \
+    > ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist
 launchctl load -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist   # start + at login
 tail -f ~/Library/Logs/whatsapp-mcp-daemon.log                           # watch it
 launchctl unload -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist # stop

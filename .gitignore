@@ -27,3 +27,6 @@ store/
 # Personal notes
 NOTES.md
 LEARNINGS.md
+
+# Generated LaunchAgent (embeds your home directory) — build it from the .example
+com.whatsapp-mcp.daemon.plist

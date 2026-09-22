@@ -3,9 +3,17 @@
   LaunchAgent for the resident WhatsApp daemon: keeps the connection open so the local
   store stays fresh, and serves the loopback IPC that the MCP server proxies through.
 
-  Install:
-    cp com.whatsapp-mcp.daemon.plist ~/Library/LaunchAgents/
+  This is a TEMPLATE. launchd does not expand ~ or $HOME, so the placeholders below must
+  become absolute paths. Generate your own copy — the generated file is gitignored,
+  because it embeds your home directory:
+
+    sed -e "s#__NODE__#$(command -v node)#" \
+        -e "s#__REPO__#$PWD#" \
+        -e "s#__HOME__#$HOME#" \
+        com.whatsapp-mcp.daemon.plist.example \
+        > ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist
     launchctl load -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist
+
   Stop (persists across reboots):
     launchctl unload -w ~/Library/LaunchAgents/com.whatsapp-mcp.daemon.plist
   Logs:
@@ -19,12 +27,12 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/you/.nvm/versions/node/v24.16.0/bin/node</string>
-    <string>/Users/you/code/whatsapp-mcp/src/daemon.mjs</string>
+    <string>__NODE__</string>
+    <string>__REPO__/src/daemon.mjs</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/you/code/whatsapp-mcp</string>
+  <string>__REPO__</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -38,8 +46,8 @@
   <integer>10</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/you/Library/Logs/whatsapp-mcp-daemon.log</string>
+  <string>__HOME__/Library/Logs/whatsapp-mcp-daemon.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/you/Library/Logs/whatsapp-mcp-daemon.log</string>
+  <string>__HOME__/Library/Logs/whatsapp-mcp-daemon.log</string>
 </dict>
 </plist>
