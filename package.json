@@ -28,7 +28,7 @@
   "author": "",
   "license": "AGPL-3.0-or-later",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@whiskeysockets/baileys": "^6.7.24",
     "better-sqlite3": "^12.11.1",
     "pino": "^10.4.0",
